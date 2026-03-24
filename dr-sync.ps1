@@ -54,11 +54,25 @@ try {
     Log "Starting Azure DR VM..."
     az vm start --name $AzureVmName --resource-group $ResourceGroup -o none 2>&1
     if ($LASTEXITCODE -ne 0) { throw "Failed to start Azure VM" }
-    Start-Sleep -Seconds 30
 
     # Get Azure VM IP
     $AzureIp = az network public-ip show --name ViseFin-PIP --resource-group $ResourceGroup --query ipAddress -o tsv
     Log "Azure VM IP: $AzureIp"
+
+    # Wait for SSH to become available (VM can take several minutes to boot)
+    Log "Waiting for SSH to be ready..."
+    $sshReady = $false
+    for ($i = 0; $i -lt 30; $i++) {
+        $test = ssh -i C:\Users\Administrator\.ssh\id_rsa_drsync -o StrictHostKeyChecking=no -o ConnectTimeout=5 -o BatchMode=yes visefin@$AzureIp "echo ready" 2>&1
+        if ($test -match "ready") {
+            $sshReady = $true
+            break
+        }
+        Log "  SSH not ready yet (attempt $($i+1)/30), waiting 30s..."
+        Start-Sleep -Seconds 30
+    }
+    if (-not $sshReady) { throw "SSH to Azure VM timed out after 15 minutes" }
+    Log "SSH is ready"
 
     # Step 2: Build rsync exclude args
     $excludeArgs = ($ExcludePaths | ForEach-Object { "--exclude='$_'" }) -join " "
