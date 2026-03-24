@@ -48,7 +48,7 @@ All scripts are in `F:\Production\Infra\` and backed up to GitHub at `https://gi
 
 ### dr-sync.ps1 — Daily Incremental Sync
 
-**Scheduled:** Daily at 8:00 AM via Windows Task Scheduler (`DR-Sync-Azure`)
+**Scheduled:** Daily at 2:00 AM via Windows Task Scheduler (`DR-Sync-Azure`)
 
 **What it does:**
 1. Authenticates to Azure using service principal (`C:\AzureUpload\dr-sp-creds.json`)
@@ -152,3 +152,5 @@ The on-prem VM uses DHCP (`/etc/netplan/01-network.yaml`), which works in both e
 |---|---|
 | 2026-03-23 | Initial DR setup: VHD upload, VM creation, sync scripts |
 | 2026-03-24 | Fixed sync auth (service principal), sudo rsync, tested end-to-end |
+| 2026-03-24 | Fixed SSH readiness check (TCP port test instead of SSH binary) |
+| 2026-03-24 | Schedule confirmed at 2:00 AM daily, manually tested and verified |
