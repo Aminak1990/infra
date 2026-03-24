@@ -59,19 +59,21 @@ try {
     $AzureIp = az network public-ip show --name ViseFin-PIP --resource-group $ResourceGroup --query ipAddress -o tsv
     Log "Azure VM IP: $AzureIp"
 
-    # Wait for SSH to become available (VM can take several minutes to boot)
-    Log "Waiting for SSH to be ready..."
+    # Wait for SSH port to become available (VM can take several minutes to boot)
+    Log "Waiting for SSH port to be ready..."
     $sshReady = $false
-    for ($i = 0; $i -lt 30; $i++) {
-        $test = ssh -i C:\Users\Administrator\.ssh\id_rsa_drsync -o StrictHostKeyChecking=no -o ConnectTimeout=5 -o BatchMode=yes visefin@$AzureIp "echo ready" 2>&1
-        if ($test -match "ready") {
+    for ($i = 0; $i -lt 40; $i++) {
+        $tcp = Test-NetConnection -ComputerName $AzureIp -Port 22 -WarningAction SilentlyContinue -ErrorAction SilentlyContinue
+        if ($tcp.TcpTestSucceeded) {
             $sshReady = $true
+            Log "  SSH port open after $($i+1) attempts"
+            Start-Sleep -Seconds 15  # Extra wait for SSHD to fully initialize
             break
         }
-        Log "  SSH not ready yet (attempt $($i+1)/30), waiting 30s..."
-        Start-Sleep -Seconds 30
+        Log "  SSH not ready yet (attempt $($i+1)/40), waiting 20s..."
+        Start-Sleep -Seconds 20
     }
-    if (-not $sshReady) { throw "SSH to Azure VM timed out after 15 minutes" }
+    if (-not $sshReady) { throw "SSH to Azure VM timed out after 13 minutes" }
     Log "SSH is ready"
 
     # Step 2: Build rsync exclude args
