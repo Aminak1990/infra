@@ -18,7 +18,8 @@ $ResourceGroup = "Kanvantage"
 $AzureVmName = "ViseFin-Production"
 $OnPremVmIp = "10.20.0.36"
 $SshKey = "C:\Users\Administrator\.ssh\id_rsa_drsync"
-$SshUser = "drsync"
+$SshUser = "visefin"
+$SpCreds = "C:\AzureUpload\dr-sp-creds.json"
 
 # Directories to sync (add/remove as needed)
 $SyncPaths = @(
@@ -42,6 +43,13 @@ $ExcludePaths = @(
 try {
     Log "=== DR Sync Started ==="
 
+    # Step 0: Login to Azure with service principal
+    Log "Authenticating to Azure..."
+    $sp = Get-Content $SpCreds | ConvertFrom-Json
+    az login --service-principal -u $sp.appId -p $sp.password --tenant $sp.tenant -o none 2>&1
+    if ($LASTEXITCODE -ne 0) { throw "Azure login failed" }
+    Log "Azure login successful"
+
     # Step 1: Start Azure VM
     Log "Starting Azure DR VM..."
     az vm start --name $AzureVmName --resource-group $ResourceGroup -o none 2>&1
@@ -62,9 +70,12 @@ try {
         Log "Syncing $path..."
         $rsyncCmd = "rsync -azP --delete $excludeArgs -e 'ssh -i /tmp/drsync_key -o StrictHostKeyChecking=no' $path $SshUser@${AzureIp}:$path"
 
-        # Execute rsync from the on-prem VM via SSH
-        $result = ssh -i $SshKey -o StrictHostKeyChecking=no -o ConnectTimeout=10 root@$OnPremVmIp `
-            "export TERM=dumb; rsync -az --delete -e 'ssh -o StrictHostKeyChecking=no' $path $SshUser@${AzureIp}:$path 2>&1"
+        # Execute rsync from the on-prem VM via SSH (using password auth via SSH_ASKPASS)
+        $env:SSH_ASKPASS = "C:\AzureUpload\sshpass.bat"
+        $env:SSH_ASKPASS_REQUIRE = "force"
+        $env:DISPLAY = ":0"
+        $result = ssh -o StrictHostKeyChecking=no -o PreferredAuthentications=password -o ConnectTimeout=30 visefin@$OnPremVmIp `
+            "echo ViseFin2026 | sudo -S rsync -az --delete --rsync-path='sudo rsync' -e 'ssh -i /root/.ssh/id_rsa_drsync -o StrictHostKeyChecking=no' $path $SshUser@${AzureIp}:$path 2>&1"
 
         if ($LASTEXITCODE -eq 0) {
             Log "  $path synced successfully"
@@ -76,8 +87,8 @@ try {
 
     # Step 4: Sync database dumps if applicable
     Log "Triggering database backup on source..."
-    ssh -i $SshKey -o StrictHostKeyChecking=no root@$OnPremVmIp `
-        "pg_dumpall -U postgres 2>/dev/null | gzip > /tmp/db_backup.sql.gz && rsync -azP -e 'ssh -o StrictHostKeyChecking=no' /tmp/db_backup.sql.gz $SshUser@${AzureIp}:/tmp/db_backup.sql.gz 2>&1"
+    ssh -o StrictHostKeyChecking=no -o PreferredAuthentications=password visefin@$OnPremVmIp `
+        "echo ViseFin2026 | sudo -S bash -c 'pg_dumpall -U postgres 2>/dev/null | gzip > /tmp/db_backup.sql.gz && rsync -az -e ""ssh -i /root/.ssh/id_rsa_drsync -o StrictHostKeyChecking=no"" /tmp/db_backup.sql.gz $SshUser@${AzureIp}:/tmp/db_backup.sql.gz 2>&1'"
     Log "Database backup synced"
 
     # Step 5: Deallocate Azure VM to save costs
